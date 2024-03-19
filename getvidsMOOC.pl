@@ -23,38 +23,78 @@ pages to parse
 
 =cut
 
-sub fetch($url, $printp=0) {
-    my $content = LWP::Simple::get($url) 
-        or die 'unable to get page';
-    if ($printp) {
-        map { say } (split /\n/, $content)[0..10];
+=for toread
+https://www.perl.com/article/untangling-subroutine-attributes/
+https://metacpan.org/release/DCONWAY/Smart-Comments-1.000005/view/lib/Smart/Comments.pm
+=cut
+
+sub fetch($url, $printp=1, $fetch=0) {
+    # =for optimization
+    # return filehandle 
+    # =cut
+    my $fn = 'current.html';
+    my $content;
+    if ($fetch) {
+        my $content = LWP::Simple::get($url) or die 'unable to get page';
+        #todo specify utf8
+        open (my $fh, '>', $fn) or die "could not open file '$fn' $!";
+        print $fh $content;
+        close $fh;
     }
-    return $content
+    else {
+        open (my $fh, '<:utf8', $fn) or die "could not open file '$fn' $!";
+        {
+            local $/;
+            $content = <$fh>;
+        }
+        close $fh;
+    }
+    if ($printp) { 
+        map { say } (split /\n/, $content)[0..10] 
+    }
+    return $content;
+
 }
 
-# my $content = fetch('http://www.perlmeme.org/tutorials/lwp.html','true');
-my $mooc = fetch('https://www.cs.cornell.edu/courses/cs6120/2023fa/self-guided/',0);
 
-my $p = HTML::Parser->new(
-    api_version => 3,
-    start_h => [\&estart, "self,tagname,attr,attrseq,text"],
-    end_h => [ sub { shift->handler(text => undef) }, "self" ],
-);
 
-sub estart {
-    my ($self, $tagname) = @_;
+package ev {
+    sub text {
+        my ($text,) = @_;
+        if ($text !~ /^\s*$/g) { say "$text" }
+    }
 
-    sub etext {
-        my ($self, $tagname, $text) = @_;
-        if ($text !~ /^\s*$/g){
-            say "$text";
+    package article {
+        # todo reset handlers, memorize coderef?
+        sub start {
+            my ($self,$tagname,$attr) = @_;
+            my $clss = $attr->{class};
+            if ($tagname eq 'a') {
+                if (defined $clss && $clss =~ /video/) {
+                    say "video: $attr->{href}";
+                }
+            }
+            $self->handler(text => \&text, "text");
         }
     }
 
-    if ($tagname eq 'article') {
-        $self->handler(text => \&etext, "self,tagname,dtext");
+    sub start {
+        my ($self, $tagname, $attr) = @_;
+        if ($tagname eq 'article') {
+            $self->handler(start => \&article::start, "self,tagname,attr");
+        }
     }
+
 }
 
-$p->parse($mooc);
+sub main {
+    my $mooc = fetch('https://www.cs.cornell.edu/courses/cs6120/2023fa/self-guided/');
+    # my $p = HTML::Parser->new(
+    #     api_version => 3,
+    #     start_h => [\&ev::article::start, "self,tagname,attr,attrseq,text"],
+    # );
+    # $p->parse($mooc);
+}
+
+main();
 
