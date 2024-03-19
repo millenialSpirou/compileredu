@@ -9,10 +9,15 @@ use HTML::Parser ();
 use Data::Dumper;
 
 =for TODO
+- build ast like datastructure with info and return it
+- fetch return filehandle for iterative parsing
 - start using parser with callback fetch
 - check how SO blocks LWP::Simple::Get
 - interactive recursion, tk?
 - termio interface: window size aware printing
+- todo reset handlers, memorize coderef?
+
+- perl fold pod
 
 pages to parse
 - MOOC cornel
@@ -28,72 +33,86 @@ https://www.perl.com/article/untangling-subroutine-attributes/
 https://metacpan.org/release/DCONWAY/Smart-Comments-1.000005/view/lib/Smart/Comments.pm
 =cut
 
-sub fetch($url, $printp=1, $fetch=0) {
-    # =for optimization
-    # return filehandle 
-    # =cut
-    my $fn = 'current.html';
-    my $content;
-    if ($fetch) {
-        my $content = LWP::Simple::get($url) or die 'unable to get page';
-        #todo specify utf8
-        open (my $fh, '>', $fn) or die "could not open file '$fn' $!";
-        print $fh $content;
-        close $fh;
+package smol {
+    sub nonblanktext {
+        my ($text,) = @_;
+        if ($text !~ /^\s*$/g) { say "$text" }
     }
-    else {
-        open (my $fh, '<:utf8', $fn) or die "could not open file '$fn' $!";
-        {
-            local $/;
-            $content = <$fh>;
-        }
-        close $fh;
-    }
-    if ($printp) { 
-        map { say } (split /\n/, $content)[0..10] 
-    }
-    return $content;
+}
 
+package net {
+    sub fetch($url, $printp=1, $fetch=0) {
+        my $fn = 'current.html';
+        my $content;
+        if ($fetch) {
+            my $content = LWP::Simple::get($url) or die 'unable to get page';
+            #todo specify utf8
+            open (my $fh, '>:utf8', $fn) or die "could not open file '$fn' $!";
+            print $fh $content;
+            close $fh;
+        }
+        else {
+            open (my $fh, '<:utf8', $fn) or die "could not open file '$fn' $!";
+            {
+                local $/;
+                $content = <$fh>;
+            }
+            close $fh;
+        }
+        if ($printp) { 
+            map { say } (split /\n/, $content)[0..10] 
+        }
+        return $content;
+    }
 }
 
 
 
 package ev {
-    sub text {
-        my ($text,) = @_;
-        if ($text !~ /^\s*$/g) { say "$text" }
-    }
-
-    package article {
-        # todo reset handlers, memorize coderef?
-        sub start {
-            my ($self,$tagname,$attr) = @_;
-            my $clss = $attr->{class};
-            if ($tagname eq 'a') {
-                if (defined $clss && $clss =~ /video/) {
-                    say "video: $attr->{href}";
-                }
-            }
-            $self->handler(text => \&text, "text");
-        }
-    }
-
     sub start {
         my ($self, $tagname, $attr) = @_;
         if ($tagname eq 'article') {
-            $self->handler(start => \&article::start, "self,tagname,attr");
+            $self->handler(start => \&ev::article::start, "self,tagname,attr,attrseq,text");
+            $self->handler(end => \&ev::article::end, "self,tagname,attr");
+        }
+    }
+}
+
+package ev::article {
+    sub start {
+        my ($self,$tagname,$attr,$attrseq,$text) = @_;
+
+        # extract video links
+        my $clss = $attr->{class};
+        if ($tagname eq 'a') {
+            if (defined $clss && $clss =~ /video/) {
+                say "video: $attr->{href}";
+            }
+        }
+        if ($tagname eq 'h1') {
+            $self->handler(text => \&smol::nonblanktext, "dtext");
         }
     }
 
+    sub end {
+        my ($self,$tagname,$attr,$attrseq,$text) = @_;
+        if ($tagname eq 'h1') {
+            $self->handler(text => undef);
+        }
+        if ($tagname eq 'article') {
+            say "\n\n";
+        }
+    }
 }
 
+
 sub main {
-    my $mooc = fetch('https://www.cs.cornell.edu/courses/cs6120/2023fa/self-guided/');
-    # my $p = HTML::Parser->new(
-    #     api_version => 3,
-    #     start_h => [\&ev::article::start, "self,tagname,attr,attrseq,text"],
-    # );
-    # $p->parse($mooc);
+    my $mooc = net::fetch('https://www.cs.cornell.edu/courses/cs6120/2023fa/self-guided/');
+    my $p = HTML::Parser->new(
+        api_version => 3,
+        start_h => [\&ev::start, "self,tagname,attr,attrseq,text"],
+    );
+    $p->parse($mooc);
 }
 
 main();
