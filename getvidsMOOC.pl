@@ -38,6 +38,13 @@ package smol {
         my ($text,) = @_;
         if ($text !~ /^\s*$/g) { say "$text" }
     }
+    sub squeeze { 
+        my ($x,) = @_; 
+        $x =~ s/\n//g; 
+        $x =~ s/^\s+//g; 
+        $x =~ tr/ //s; 
+        return $x;
+    }
 }
 
 package net {
@@ -46,7 +53,6 @@ package net {
         my $content;
         if ($fetch) {
             my $content = LWP::Simple::get($url) or die 'unable to get page';
-            #todo specify utf8
             open (my $fh, '>:utf8', $fn) or die "could not open file '$fn' $!";
             print $fh $content;
             close $fh;
@@ -79,20 +85,27 @@ package ev {
 }
 
 package ev::article {
+    my $acc = "";
+    my @vidlinks = ();
+
     sub start {
         my ($self,$tagname,$attr,$attrseq,$text) = @_;
 
-        # extract video links
+        my $h1h = sub { $acc .= shift };
+
         my $clss = $attr->{class};
         if ($tagname eq 'a') {
             if (defined $clss && $clss =~ /video/) {
-                say "video: $attr->{href}";
+                my $l = $attr->{href};
+                $l =~ s/^\s+//g;
+                push @vidlinks, $l;
             }
         }
         if ($tagname eq 'h1') {
-            $self->handler(text => \&smol::nonblanktext, "dtext");
+            $self->handler(text => $h1h, "dtext");
         }
     }
+
 
     sub end {
         my ($self,$tagname,$attr,$attrseq,$text) = @_;
@@ -100,14 +113,22 @@ package ev::article {
             $self->handler(text => undef);
         }
         if ($tagname eq 'article') {
-            say "\n\n";
+            say "* @{[smol::squeeze($acc)]}"; 
+
+            say ":video:";
+            say "- $_" for @vidlinks;
+            say ":end:";
+
+            say "";
+            $acc = "";
+            @vidlinks = ();
         }
     }
 }
 
 
 sub main {
-    my $mooc = net::fetch('https://www.cs.cornell.edu/courses/cs6120/2023fa/self-guided/');
+    my $mooc = net::fetch('https://www.cs.cornell.edu/courses/cs6120/2023fa/self-guided/',0);
     my $p = HTML::Parser->new(
         api_version => 3,
         start_h => [\&ev::start, "self,tagname,attr,attrseq,text"],
