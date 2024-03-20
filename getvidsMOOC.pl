@@ -33,6 +33,10 @@ https://www.perl.com/article/untangling-subroutine-attributes/
 https://metacpan.org/release/DCONWAY/Smart-Comments-1.000005/view/lib/Smart/Comments.pm
 =cut
 
+
+#TODO
+# - extract video link titles and write pretty hyperlinks
+
 package smol {
     sub nonblanktext {
         my ($text,) = @_;
@@ -44,6 +48,13 @@ package smol {
         $x =~ s/^\s+//g; 
         $x =~ tr/ //s; 
         return $x;
+    }
+    sub drawerlist {
+        my ($drawername,$list) = @_;
+        say ":$drawername:";
+        say "- $_" for @$list;
+        say ":end:";
+
     }
 }
 
@@ -78,21 +89,25 @@ package ev {
     sub start {
         my ($self, $tagname, $attr) = @_;
         if ($tagname eq 'article') {
-            $self->handler(start => \&ev::article::start, "self,tagname,attr,attrseq,text");
-            $self->handler(end => \&ev::article::end, "self,tagname,attr");
+            $self->handler(
+                start => \&ev::article::start, 
+                "self,tagname,attr,attrseq,text"
+            );
+            $self->handler(
+                end => \&ev::article::end, 
+                "self,tagname,attr"
+            );
         }
     }
 }
 
 package ev::article {
-    my $acc = "";
-    my @vidlinks = ();
+    my $textacc;
+    my @vidlinks;
 
+    my $h1h = sub { $textacc->{h1} .= shift };
     sub start {
         my ($self,$tagname,$attr,$attrseq,$text) = @_;
-
-        my $h1h = sub { $acc .= shift };
-
         my $clss = $attr->{class};
         if ($tagname eq 'a') {
             if (defined $clss && $clss =~ /video/) {
@@ -113,15 +128,13 @@ package ev::article {
             $self->handler(text => undef);
         }
         if ($tagname eq 'article') {
-            say "* @{[smol::squeeze($acc)]}"; 
+            say "* @{[smol::squeeze($textacc->{h1})]}"; 
+            $textacc->{h1} = "";
 
-            say ":video:";
-            say "- $_" for @vidlinks;
-            say ":end:";
+            smol::drawerlist('video',\@vidlinks);
+            @vidlinks = ();
 
             say "";
-            $acc = "";
-            @vidlinks = ();
         }
     }
 }
@@ -137,4 +150,3 @@ sub main {
 }
 
 main();
-
